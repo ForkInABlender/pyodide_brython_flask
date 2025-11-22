@@ -1,0 +1,96 @@
+<!-- Dylan Kenneth Eliot
+"""
+This is the frontend loading parts for the backend.
+
+"""
+
+-->
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.11.3/brython.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.11.3/brython_stdlib.js"></script>
+
+  <script>
+    async function main() {
+      window.pyodide = await loadPyodide();
+      brython();
+    }
+  </script>
+</head>
+
+<body onload="main()">
+
+<!-- ============================
+     MAIN THREAD (BRYTHON)
+=============================== -->
+<script type="text/python">
+
+from browser import websocket, window, worker
+
+# ---------------------------------------------------------
+# Worker EVENT HANDLERS
+# ---------------------------------------------------------
+
+def worker_onmsg(e):
+    # message coming FROM worker
+    print("Main.onmsg<--", e.data.to_dict())
+
+    # forward worker’s output to server websocket
+    ws.send(f"Worker says: {e.data.to_dict()}")
+
+
+def worker_ready(w):
+    # send an object to worker immediately
+    w.send({
+        "origin": window.location.host,
+        "msg": "Main.ready"
+    })
+
+
+wk = worker.create_worker("w", worker_ready, worker_onmsg)
+
+
+# ---------------------------------------------------------
+# WEBSOCKET EVENT HANDLERS
+# ---------------------------------------------------------
+
+def ws_on_message(evt):
+    print("Server→Main:", evt.data) 
+     
+
+def ws_on_open(evt):
+    print("WebSocket OPEN")
+    ws.send("Main→Server: hello!")
+
+# open websocket to flask /ws
+ws = websocket.WebSocket("ws://" + window.location.host + "/ws")
+ws.bind("open", ws_on_open)
+ws.bind("message", ws_on_message)
+
+</script>
+
+
+<!-- ============================
+     WEB WORKER (BRYTHON)
+=============================== -->
+<script type="text/python" class="webworker" id="w">
+from browser import self, bind
+
+@bind(self, "message")
+def onmsg(evt):
+    data = evt.data      # this is a JSON object
+    host = data["origin"]
+    msg  = data["msg"]
+    print("worker-w: ", data.to_dict())
+    # send response as a JSON-serializable object
+    self.send({
+        "worker": "w",
+        "received_from": host,
+        "msg": msg,
+        "status": "OK"
+    })
+</script>
+
+</body>
+</html>
